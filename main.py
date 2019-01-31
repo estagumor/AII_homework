@@ -11,7 +11,7 @@ from whoosh.fields import *
 import os
 from whoosh.index import create_in, open_dir
 from whoosh.qparser import QueryParser, MultifieldParser
-from whoosh.query import Every
+from whoosh.query import *
 
 def convertStringToMonth(m):
     dictionary = {'Enero': 1, 'Febrero': 2, 'Marzo': 3, 'Abril': 4, 'Mayo': 5, 'Junio': 6, 'Julio':7, 'Agosto': 8, 'Septiembre': 9, 'Octubre': 10, 'Noviembre': 11, 'Diciembre': 12}
@@ -48,7 +48,7 @@ def cargarDatos():
             pattern = '([a-zA-Z]*)\s*([0-9]*)\,\s*([0-9]*)'
             information = re.findall(pattern, p)
             information = information[0]
-            fecha = datetime.datetime(int(information[2]),convertStringToMonth(information[0]), int(information[1]))
+            fecha = datetime.datetime(int(information[2]), convertStringToMonth(information[0]), int(information[1]))
             #Directores
             url = ('https://www.elseptimoarte.net' + link['href'])
             urlpelicula = urllib.request.urlopen(url).read()
@@ -75,7 +75,7 @@ def listarDatos():
     secundario.geometry("500x500") #Cambiamos geometría
     scrollbar = tkinter.Scrollbar(secundario) #Hacemos una scrollbar
     scrollbar.pack(side="right", fill="y")
-    lista = tkinter.Listbox(secundario) #Se la asociamos al eje y de la lista
+    lista = tkinter.Listbox(secundario) 
     lista.pack(side="left", fill="both", expand=True)
     lista.config(yscrollcommand=scrollbar.set)
     scrollbar.config(command=lista.yview) #le asociamos al scroll el eje y de la vista
@@ -83,68 +83,43 @@ def listarDatos():
     ix = open_dir("index") #Abre el index de antes
     with ix.searcher() as s:
         q = Every() #Devuelve todos los documents
-        results = s.search(q, limit=None, sortedby="fecha")
+        results = s.search(q, limit=None, sortedby="fecha") #Ordenamos por fecha
         for resultado in results:
             lista.insert(END, "Titulo: " + resultado['titulo'])
             lista.insert(END, "Estreno: " + resultado['fecha'].strftime('%d-%m-%Y'))
             lista.insert(END, " ")
     secundario.mainloop()
 
-def mostrarBusqueda(eleccion, contenido):
-    secundario = tkinter.Tk()
-    secundario.title("Resultado de la busqueda")#Cambia el titulo
-    secundario.geometry("500x500") #Cambiamos geometría
-    scrollbar = tkinter.Scrollbar(secundario, orient="vertical") #Hacemos una scrollbar
-    lista = tkinter.Listbox(secundario, yscrollcommand=scrollbar.set) #Se la asociamos al eje y de la lista
-    scrollbar.config(command=lista.yview()) #le asociamos al scroll el eje y de la vista
+def mostrarBusqueda(contenido):
+    terciario = tkinter.Tk()
+    terciario.title("Resultado de la busqueda")#Cambia el titulo
+    terciario.geometry("500x500") #Cambiamos geometría
+    scrollbar = tkinter.Scrollbar(terciario) #Hacemos una scrollbar
     scrollbar.pack(side="right", fill="y")
-    lista.pack(side="left",fill="both", expand=True)
+    lista = tkinter.Listbox(terciario) 
+    lista.pack(side="left", fill="both", expand=True)
+    lista.config(yscrollcommand=scrollbar.set)
+    scrollbar.config(command=lista.yview) #le asociamos al scroll el eje y de la vista
 
-    bd = sqlite3.connect("BD.dat") #Conecta con sql3lite y especifica archivo de destino de los datos
-    cursor =  bd.cursor() #Crea un cursor que es lo que utiliza la bd
-    bd.text_factory = str #Configuración para convertir a UTF-8
-    s = "%" + contenido + "%" 
-    if eleccion == 'tema':
-        cursor.execute("""select * from datos where titulo like ?""", (s,)) #Se convierte esta mierda en lista porque si no pasa chars
-    elif eleccion == 'autor':
-        cursor.execute("""select * from datos where autor like ?""", (s,))
-    else:
-        cursor.execute("""select * from datos where fecha like ?""", (s,))
-        
-    for resultado in cursor:
-        lista.insert(END, "Título: " + resultado[1]) #Empezamos desde 1 porque el 0 es id
-        lista.insert(END, "Link: " + resultado[2])
-        lista.insert(END, "Autor: " + resultado[3])
-        lista.insert(END, "Fecha y hora: " + resultado[4])
-        lista.insert(END, " ")
-    
-    cursor.close()
-    bd.close()
-    secundario.mainloop()
+    ix = open_dir("index") #Abre el index de antes
+    with ix.searcher() as s: 
+        qp = MultifieldParser(["titulo", "sinopsis"], peliculas)
+        q = qp.parse(contenido)
+        results = s.search(q, limit= None)
+        print(results)
+        for resultado in results:
+            lista.insert(END, "Titulo: " + resultado['titulo'])
+            lista.insert(END, "Estreno: " + resultado['fecha'].strftime('%d-%m-%Y'))
+            lista.insert(END, " ")
+    terciario.mainloop()
 
-def mostrarPorTema():
-# CONTROL SHIFT 7
+def buscar():
     busqueda = tkinter.Tk()
-    busqueda.title('Busqueda')
+    busqueda.title('Búsqueda')
+    label = tkinter.Label(busqueda, text= "Debe introducir los operadores en mayúsculas")
     buscador = tkinter.Entry(busqueda)
-    button = tkinter.Button(busqueda, command = (lambda : mostrarBusqueda('tema', buscador.get())))
-    buscador.pack()
-    button.pack()
-
-    
-def mostrarPorAutor():
-    busqueda = tkinter.Tk()
-    busqueda.title('Busqueda')
-    buscador = tkinter.Entry(busqueda)
-    button = tkinter.Button(busqueda, command = (lambda : mostrarBusqueda('autor', buscador.get())))
-    buscador.pack()
-    button.pack()
-    
-def mostrarPorFecha():
-    busqueda = tkinter.Tk()
-    busqueda.title('Busqueda')
-    buscador = tkinter.Entry(busqueda)
-    button = tkinter.Button(busqueda, command = (lambda : mostrarBusqueda('', buscador.get())))
+    button = tkinter.Button(busqueda, text="Buscar", command=(lambda: mostrarBusqueda(buscador.get())))
+    label.pack()
     buscador.pack()
     button.pack()
 
@@ -156,7 +131,7 @@ menuPrincipal = tkinter.Menu(principal) #Le añadimos un menú
 
 menuPrincipal.add_command(label="CARGAR", command=cargarDatos)
 menuPrincipal.add_command(label="LISTAR", command=listarDatos)
-menuPrincipal.add_command(label="BUSCAR", command=mostrarPorTema)
+menuPrincipal.add_command(label="BUSCAR", command=buscar)
 
 principal.config(menu=menuPrincipal) #Añade el menu al tk principal
 principal.mainloop() #Echa las cosas a andar
