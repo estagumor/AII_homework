@@ -1,30 +1,40 @@
-#https://foros.derecho.com/foro/20-Derecho-Civil-General
 # -*- coding: utf-8 -*-
 
-import sqlite3
 import tkinter
+from tkinter import messagebox
 from tkinter.constants import END
 import urllib.request
 import re
 import datetime
 from bs4 import BeautifulSoup
-from builtins import str
+from whoosh.fields import *
+import os
+from whoosh.index import create_in, open_dir
+from whoosh.qparser import QueryParser, MultifieldParser
+from whoosh.query import Every
 
 def convertStringToMonth(m):
     dictionary = {'Enero': 1, 'Febrero': 2, 'Marzo': 3, 'Abril': 4, 'Mayo': 5, 'Junio': 6, 'Julio':7, 'Agosto': 8, 'Septiembre': 9, 'Octubre': 10, 'Noviembre': 11, 'Diciembre': 12}
     return dictionary.get(m)
 
+peliculas = Schema(titulo=TEXT(stored=True),
+    fecha=DATETIME(stored=True, sortable=True),
+    directores=TEXT(),
+    sinopsis=TEXT())
+
 ##########FUNCIONES
 def cargarDatos():
-    #Utilizando BeautifulSoup, extrae para cada película: título, fecha de estreno
-    #en España, director/s y sinopsis .
-    bd = sqlite3.connect("BD.dat") #Conecta con sql3lite y especifica archivo de destino de los datos
-    cursor =  bd.cursor() #Crea un cursor que es lo que utiliza la bd
-    cursor.execute("""drop table if EXISTS datos""")
-    cursor.execute("""create table datos (id integer primary key autoincrement, titulo text, fechaEstreno date, directores text, sinopsis text)""")
+    #WHOOSH
+    if not os.path.exists("index"):
+        os.mkdir("index")
+    ix0 = create_in("index", peliculas)
+    ix = open_dir("index")
+    writer = ix.writer()
+
+    contador = 0
     i = 1
     while i <= 2:
-        pageUrl= urllib.request.urlopen('https://www.elseptimoarte.net/estrenos/' + i).read()
+        pageUrl= urllib.request.urlopen('https://www.elseptimoarte.net/estrenos/' + str(i)).read()
         soup=BeautifulSoup(pageUrl,"html.parser")
         s = soup.find('ul', ['elements']) #Bloque principal
         li = s.find_all('li') #Contiene la url y algunos datos de cada pelicula 
@@ -52,34 +62,32 @@ def cargarDatos():
                     directores = directores + "," + sp.find('span', itemprop="name").text
             #Sinopsis
             sinopsis = soupelicula.find('div', itemprop="description").text
-            cursor.execute("""insert into datos (titulo, fechaEstreno, directores, sinopsis) values (?,?,?,?)""", (title, fecha, directores, sinopsis))
-    bd.commit()
-    cursor.close()
-    bd.close()
-    #Además crea esquemas e índices en Whoosh para almacenar dicha información TODO
+            writer.add_document(titulo=title, fecha=fecha,
+                    directores=directores, sinopsis=sinopsis)  
+            contador = contador + 1 
+        i = i + 1
+    writer.commit(optimize=True)
+    messagebox.showinfo( "Peliculas", "Peliculas guardadas correctamente. \nHay " + str(contador) + " registros")
 
-def mostrarDatos():
+def listarDatos():
     secundario = tkinter.Tk()
     secundario.title("Listado")#Cambia el titulo
     secundario.geometry("500x500") #Cambiamos geometría
-    scrollbar = tkinter.Scrollbar(secundario, orient="vertical") #Hacemos una scrollbar
-    lista = tkinter.Listbox(secundario, yscrollcommand=scrollbar.set) #Se la asociamos al eje y de la lista
-    scrollbar.config(command=lista.yview()) #le asociamos al scroll el eje y de la vista
+    scrollbar = tkinter.Scrollbar(secundario) #Hacemos una scrollbar
     scrollbar.pack(side="right", fill="y")
-    lista.pack(side="left",fill="both", expand=True)
+    lista = tkinter.Listbox(secundario) #Se la asociamos al eje y de la lista
+    lista.pack(side="left", fill="both", expand=True)
+    lista.config(yscrollcommand=scrollbar.set)
+    scrollbar.config(command=lista.yview) #le asociamos al scroll el eje y de la vista
 
-    bd = sqlite3.connect("BD.dat") #Conecta con sql3lite y especifica archivo de destino de los datos
-    cursor =  bd.cursor() #Crea un cursor que es lo que utiliza la bd
-    cursor.execute("""select * from datos""")
-    for resultado in cursor:
-        lista.insert(END, "Título: " + resultado[1]) #Empezamos desde 1 porque el 0 es id
-        lista.insert(END, "Link: " + resultado[2])
-        lista.insert(END, "Autor: " + resultado[3])
-        lista.insert(END, "Fecha y hora: " + resultado[4])
-        lista.insert(END, " ")
-    cursor.close()
-    bd.close()
-
+    ix = open_dir("index") #Abre el index de antes
+    with ix.searcher() as s:
+        q = Every() #Devuelve todos los documents
+        results = s.search(q, limit=None, sortedby="fecha")
+        for resultado in results:
+            lista.insert(END, "Titulo: " + resultado['titulo'])
+            lista.insert(END, "Estreno: " + resultado['fecha'].strftime('%d-%m-%Y'))
+            lista.insert(END, " ")
     secundario.mainloop()
 
 def mostrarBusqueda(eleccion, contenido):
@@ -140,38 +148,15 @@ def mostrarPorFecha():
     buscador.pack()
     button.pack()
 
-def temasMasPopulares():
-    return None
-def temasMasActivos():
-    return None
-
-
 ##########INTERFAZ GRÁFICA
-# principal = tkinter.Tk() #Creamos el tk principal
-# principal.title("Menú")
-# principal.geometry("250x12")
-# menuPrincipal = tkinter.Menu(principal) #Le añadimos un menú
-# menuDatos = tkinter.Menu(menuPrincipal, tearoff=0) #Crea el primer desplegable
-# menuMostrar = tkinter.Menu(menuPrincipal,tearoff=0)#Crea el segundo
-# menuEstadisticas = tkinter.Menu(menuPrincipal,tearoff=0)#Crea el tercero
+principal = tkinter.Tk() #Creamos el tk principal
+principal.title("Menu")
+principal.geometry("250x10")
+menuPrincipal = tkinter.Menu(principal) #Le añadimos un menú
 
-# #Primer desplegable
-# menuDatos.add_command(label="Cargar", command=cargarDatos)
-# menuDatos.add_command(label="Mostrar", command=mostrarDatos)
-# menuDatos.add_command(label="Salir", command=quit) #Cierra el principal, cuidado con los corchetes
-# menuPrincipal.add_cascade(label="Datos", menu=menuDatos)
+menuPrincipal.add_command(label="CARGAR", command=cargarDatos)
+menuPrincipal.add_command(label="LISTAR", command=listarDatos)
+menuPrincipal.add_command(label="BUSCAR", command=mostrarPorTema)
 
-# #Segundo desplegable
-# menuMostrar.add_command(label="Tema", command=mostrarPorTema)
-# menuMostrar.add_command(label="Autor", command=mostrarPorAutor)
-# menuMostrar.add_command(label="Fecha", command=mostrarPorFecha)
-# menuPrincipal.add_cascade(label="Buscar", menu=menuMostrar)
-
-# #Tercer desplegable
-# menuEstadisticas.add_command(label="Temas más populares", command=temasMasPopulares)
-# menuEstadisticas.add_command(label="Temas más activos", command=temasMasActivos)
-# menuPrincipal.add_cascade(label="Estadísticas", menu=menuEstadisticas)
-
-
-# principal.config(menu=menuPrincipal) #Añade el menu al tk principal
-# principal.mainloop() #Echa las cosas a andar
+principal.config(menu=menuPrincipal) #Añade el menu al tk principal
+principal.mainloop() #Echa las cosas a andar
